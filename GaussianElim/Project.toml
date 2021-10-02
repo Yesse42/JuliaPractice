@@ -1,0 +1,4 @@
+name = "GaussianElim"
+uuid = "25c6b45b-5539-4320-91c8-912888db6ebf"
+authors = ["Jesse <jesbrirob@gmail.com>"]
+version = "0.1.0"

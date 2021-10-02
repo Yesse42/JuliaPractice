@@ -1,0 +1,4 @@
+name = "MyProduct"
+uuid = "7b323060-2196-4e04-a1fa-e39e3385fa7b"
+authors = ["Jesse <jesbrirob@gmail.com>"]
+version = "0.1.0"
