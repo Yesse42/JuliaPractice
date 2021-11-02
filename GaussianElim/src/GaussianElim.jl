@@ -5,7 +5,6 @@ import Base.Iterators as Itr
 export RREF, RREF!
 
 function RREF!(A)
-    T = eltype(A)
     rows, cols = axes(A)
     current_col, maxcol = extrema(cols)
     current_row, maxrow = extrema(rows)

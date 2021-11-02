@@ -6,7 +6,7 @@ import Base.Iterators as Itr
 
 export MyProd
 
-struct MyProd{T} where {T<:Tuple}
+struct MyProd{T<:Tuple}
     iters::T
     function MyProd(iters...)
         length(iters) < 1 
@@ -16,9 +16,9 @@ end
 
 IteratorEltype(x::MyProd{T}) where T = if all(IteratorEltype.(x.iters).≡HasEltype()) HasEltype() else EltypeUnknown() end
 function IteratorSize(x::MyProd{T}) where T 
-    if any(Itr.map(x->x isa IsInfinite, x.iters)) 
+    if any(Itr.map(x->x isa IsInfinite, IteratorSize.(x.iters)))
         IsInfinite() 
-    elseif any(Itr.map(x->x isa SizeUnknown, x.iters)) 
+    elseif any(Itr.map(x->x isa SizeUnknown, IteratorSize.(x.iters)))
         SizeUnknown() 
     else 
         HasShape{length(x.iters)}() 

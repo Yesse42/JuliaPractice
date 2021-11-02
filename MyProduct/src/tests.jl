@@ -9,3 +9,5 @@ function iterview(iter)
         next = iterate(iter, state)
     end
 end
+
+iterview(MyProd(1:5,5:-1:1))
