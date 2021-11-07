@@ -52,8 +52,7 @@ display(heatmap(abs.(otherfour); title="Fourier Again"))
 
 otherspec=deepcopy(spec)
 
-fouriertospec!(otherspec, otherfour; weights=dim.weights, totws=dim.tot, zonws=dim.zon,
-                sinlats=dim.sinlat, plmarr=pcalc.PLM)
+fouriertospec!(otherspec, otherfour; weights=dim.weights, totws=dim.tot, zonws=dim.zon, plmarr=pcalc.PLM)
 
 display(heatmap(abs.(otherspec); title="Spectral Again"))
 

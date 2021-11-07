@@ -34,9 +34,9 @@ function gridtofourier!(outfourier, ingrid; forwardplan, zonws)
     outfourier[:, 1:length(zonws)] ./= 2*(size(outfourier, 2)-1)
 end
 
-function fouriertospec!(outspec, infourier; weights, totws, zonws, sinlats, plmarr)
+function fouriertospec!(outspec, infourier; weights, totws, zonws, plmarr)
     for (i, totw) in enumerate(totws), (j,zonw) in enumerate(0:min(totw, maximum(zonws)))
-        @views outspec[i,j] = weights ⋅ (infourier[latidx,j] * plmarr[i,j,latidx] for latidx in eachindex(sinlats))
+        @views outspec[i,j] = weights ⋅ Itr.map(*, infourier[:,j], plmarr[i,j,:])
     end
 end
 
