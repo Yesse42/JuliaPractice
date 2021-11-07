@@ -1,6 +1,6 @@
 module ModelTypes
 
-export BaroParams, BaroPreCalc, BaroDims, BaroModVals
+export BaroParams, BaroPreCalc, BaroDims, BaroModVals, BaroModel
 
 using FFTW, QuadGK, GSL
 
@@ -10,7 +10,7 @@ struct BaroParams{T}
     Δt::T
     ν::T
     rearth::T
-    mwnum::N
+    mwnum::Int
     rob::T
 end
 
@@ -20,24 +20,25 @@ BaroParams(T=Float64;
     t0=T(0),
     ν=T(4.0e2),
     rearth=T(6.378e6),
-    mwnum=T(5),
+    mwnum=5,
     rob=T(1.0e-3)) = BaroParams(Ω, Δt, t0, ν, rearth, mwnum, rob)
 
-struct BaroDims{T} 
-    griddims::NTuple{2,T}
-    fourierdims::NTuple{2,T}
-    spectraldims::NTuple{2,T}
-    fourierworkspacedims::NTuple{2,T}
-    weights::Array{T,1} # Gaussian Quadrature Weights
-    sinlat::Array{T,1} #Gauss Quad nodes
-    lat::Array{T,1} #No need for arcsin after this
-    lon::Array{T,1} #Nice
+struct BaroDims{T}
+    griddims::NTuple{2,Int}
+    fourierdims::NTuple{2,Int}
+    spectraldims::NTuple{2,Int}
+    fourierworkspacedims::NTuple{2,Int}
+    weights::Vector{T} # Gaussian Quadrature Weights
+    sinlat::Vector{T} #Gauss Quad nodes
+    lat::Vector{T} #No need for arcsin after this
+    lon::Vector{T} #Nice
     zon::UnitRange{Int} #Zonal Wavenumbers
     tot::UnitRange{Int} #Total Wavenumbers
 end
 
 function BaroDims(p::BaroParams{T}) where T
-    gnum = cld(3*p.mwnum+1,2)
+    mwnum = p.mwnum
+    gnum = cld(3*mwnum+1,2)
     griddims = (gnum, gnum*2)
     fordims = (gnum, mwnum)
     specdims  = (mwnum+2, mwnum+1) # +1 for 0 wavenmuber, +2 for extra needed mode for meridional derivatives
@@ -52,55 +53,62 @@ end
 
 struct BaroPreCalc{T} 
     PLM::Array{T,3} #An array filled with all the PLMs evaluated at every l, m and latitude in use
-    ϵTable::Array{T,2} #Quick Meridional Derivatives
-    cosθvec::Array{T,1} #Useful for vor/div
+    ϵTable::Matrix{T} #Quick Meridional Derivatives
+    cosθvec::Vector{T} #Useful for vor/div
     FFTPlan::FFTW.rFFTWPlan{T, -1, false, 2, Int} #For that sweet efficiency
+    BFFTPlan::FFTW.rFFTWPlan{Complex{T}, 1, false, 2, Int}
 end
 
 function BaroPreCalc(d::BaroDims{T}) where T
-    plms = zeros(T, d.specdims..., d.griddims[1]) #Get the plm for every total wav, zonal wav, and latitude
-    for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:tot), (k, sinlat) in enumerate(d.sinlat)
-        plms[i,j,k]=sf_legendre_sphPlm(tot, zon, sinlat)
+    plms = zeros(T, d.spectraldims..., d.griddims[1]) #Get the plm for every zonal wav, latitude, and total wav
+    for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:min(tot,maximum(d.zon))), (k, sinlat) in enumerate(d.sinlat)
+        plms[i,j,k]=sf_legendre_sphPlm(tot, zon, sinlat) * sqrt(2π) #Normalization differences
     end
-    epsarr = zeros(T, d.specdims...)
-    for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:tot)
+    epsarr = zeros(T, d.spectraldims...)
+    for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:min(tot,maximum(d.zon)))
         tot==0 && continue
         epsarr[i,j]=((tot^2-zon^2)/4*tot^2-1)
     end
-    cosvec = cos.(lat)
+    cosvec = cos.(d.lat)
     fftplan = plan_rfft(d.lat.*(d.lon)', 2)
-    BaroPreCalc(plms, epsarr, cosvec, fftplan)
+    bfftplan = plan_brfft(Complex{T}.((1:d.fourierworkspacedims[1]) .* (1:d.fourierworkspacedims[2])'), d.griddims[2], 2)
+    BaroPreCalc(plms, epsarr, cosvec, fftplan, bfftplan)
 end
 
-struct BaroModVals{T}
+mutable struct BaroModVals{T}
     time::T
-    griducos::Array{T,2}
+    griducos::Matrix{T}
     specucos::Array{Complex{T},2}
     gridvcos::Array{T,2}
     specvcos::Array{Complex{T},2}
-    gridvort::Array{T,2}
-    specvort::Array{Complex{T},2}
-    vorttend::Array{Complex{T},2}
+    gridstream::Array{T,2}
+    specstream::Array{Complex{T},2}
 end
 
 function BaroModVals(d::BaroDims{T}; time=0) where T
     time=T(time)
     griducos = zeros(T, d.griddims...)
-    specucos = zeros(T, d.spectraldims...)
+    specucos = zeros(Complex{T}, d.spectraldims...)
     gridvcos = zeros(T, d.griddims...)
-    specvcos = zeros(T, d.spectraldims...)
-    gridvort = zeros(T, d.griddms...)
-    specvort = zeros(T, d.spectraldims...)
-    vorttend = zeros(T, d.spectraldims...)
-    BaroModVals(time, griducos, specucos, gridvcos, specvcos, gridvort, specvort, vorttend)
+    specvcos = zeros(Complex{T}, d.spectraldims...)
+    gridstream = zeros(T, d.griddims...)
+    specstream = zeros(Complex{T}, d.spectraldims...)
+    BaroModVals(time, griducos, specucos, gridvcos, specvcos, gridstream, specstream)
 end
 
+const n_workspaces=3
+"For calculating temporaries without excessive allocation"
 struct BaroWorkSpace{T}
-    fourierworkspace::Array{Complex{T}, 2}
+    four::NTuple{n_workspaces, Matrix{Complex{T}}}
+    spec::NTuple{n_workspaces, Matrix{Complex{T}}}
+    grid::NTuple{n_workspaces, Matrix{T}}
 end
 
-function BaroWorkSpace(d::BaroDims)
-    BaroWorkSpace(zeros(T, d.fourierworkspacedims...))
+function BaroWorkSpace(d::BaroDims{T}) where T
+    four = Tuple(zeros(Complex{T}, d.fourierworkspacedims...) for _ in 1:n_workspaces)
+    spec = Tuple(zeros(Complex{T}, d.spectraldims...) for _ in 1:n_workspaces)
+    grid = Tuple(zeros(T, d.griddims...) for _ in 1:n_workspaces)
+    BaroWorkSpace(four, spec, grid)
 end
 
 struct BaroModel{T}
