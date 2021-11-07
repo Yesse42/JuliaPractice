@@ -6,6 +6,7 @@ using FFTW, QuadGK, GSL
 
 struct BaroParams{T}
     Ω::T
+    t0::T
     Δt::T
     ν::T
     rearth::T
@@ -16,10 +17,11 @@ end
 BaroParams(T=Float64;     
     Ω=T(7.3e-5),
     Δt=T(900.0),
+    t0=T(0),
     ν=T(4.0e2),
     rearth=T(6.378e6),
     mwnum=T(5),
-    rob=T(1.0e-3)) = BaroParams(Ω, Δt, ν, rearth, mwnum, rob)
+    rob=T(1.0e-3)) = BaroParams(Ω, Δt, t0, ν, rearth, mwnum, rob)
 
 struct BaroDims{T} 
     griddims::NTuple{2,T}
@@ -40,7 +42,7 @@ function BaroDims(p::BaroParams{T}) where T
     fordims = (gnum, mwnum)
     specdims  = (mwnum+2, mwnum+1) # +1 for 0 wavenmuber, +2 for extra needed mode for meridional derivatives
     workdims = (gnum, gnum+1)
-    sinlat, weights = (x->T.(x)).(gauss(griddims[1]))
+    sinlat, weights = (x->T.(x)).(gauss(gnum))
     lat = T.(asin.(weights))
     lon = T.(range(0, 2π; length=griddims[2]+1))[1:end-1]
     zon = 0:mwnum
@@ -97,7 +99,7 @@ struct BaroWorkSpace{T}
     fourierworkspace::Array{Complex{T}, 2}
 end
 
-function BaroWorkSpace(d::BaroDims::T)
+function BaroWorkSpace(d::BaroDims)
     BaroWorkSpace(zeros(T, d.fourierworkspacedims...))
 end
 
@@ -109,6 +111,14 @@ struct BaroModel{T}
     now::BaroModVals{T}
     new::BaroModVals{T}
     workspace::BaroWorkSpace{T}
+end
+
+function BaroModel(params::BaroParams)
+    dims=BaroDims(params)
+    pcalc=BaroPreCalc(dims)
+    old, now, new = ntuple(i->BaroModVals(dims;time=params.t0+params.Δt*(i-2)),Val(3))
+    workspace=BaroWorkSpace(dims)
+    return BaroModel(params, dims, pcalc, old, now, new, workspace)
 end
 
 end
