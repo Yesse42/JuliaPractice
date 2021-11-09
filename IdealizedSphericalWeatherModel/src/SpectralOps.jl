@@ -1,6 +1,6 @@
 module SpectralOps
 
-export gridtofourier!, fouriertospec!, spectofourier!, fouriertogrid!, specvor!, specdiv!
+export gridtofourier!, fouriertospec!, spectofourier!, fouriertogrid!, spectogrid!, 𝓖!, cos2specmerideriv!, speczonalderiv!, spectrallaplacian!, invspectrallaplacian!
 
 using FFTW, LinearAlgebra
 import Base.Iterators as Itr
@@ -25,13 +25,11 @@ function fouriertogrid!(outgrid, fouriervals; backplan)
     mul!(outgrid, backplan, fouriervals)
 end
 
-function gridtofourier!(outfourier, ingrid; forwardplan, zonws)
-    #Get the fourier values
-    mul!(outfourier, forwardplan, ingrid)
+function gridtofourier!(outfourier, ingrid; backplan, zonws)
+    #Get the fourier values by applying the backwards transform
+    ldiv!(outfourier, backplan, ingrid)
     #Set the higher wavenumbers to 0
     outfourier[:,length(zonws)+1:end] .= 0
-    #Divide the rest by the length
-    outfourier[:, 1:length(zonws)] ./= 2*(size(outfourier, 2)-1)
 end
 
 function fouriertospec!(outspec, infourier; weights, totws, zonws, plmarr)
@@ -40,26 +38,67 @@ function fouriertospec!(outspec, infourier; weights, totws, zonws, plmarr)
     end
 end
 
-function speczonalderiv()
-
+function speczonalderiv!(outspec, inspec; zonws)
+    for (i, zonw) in enumerate(zonws)
+        outspec[:,i] .= im .* zonw .* inspec[:,i]
+    end
 end
 
-function specmerideriv( ;epstable)
-
+function spectogrid!(outgrid, fourierworkspace, inspec; backplan, plmarr, sinlats, zonws, totws)
+    spectofourier!(fourierworkspace, inspec; plmarr=plmarr, sinlats=sinlats, zonws=zonws, totws=totws)
+    fouriertogrid!(outgrid, fourierworkspace; backplan=backplan)
 end
 
-"The G operator, operating on spectral coefficient arrays A and B. Assumes a triangular truncation, 
+function cos2specmerideriv!(outspec, inspec; epstable, totws, zonws)
+    for (i, totw) in enumerate(totws), (j, zonw) in enumerate(0:min(totw,maximum(zonws)))
+        #Don't use the final totw mode, as it doesn't have the extra mode for the derivative
+        i==length(totws) && break
+        if totw == zonw
+            outspec[i,j] = (totw+2)*epstable[i+1,j]*inspec[i+1,j]
+        else
+        outspec[i,j] = -(totw-1)*epstable[i,j]*inspec[i-1, j]+
+                        (totw+2)*epstable[i+1,j]*inspec[i+1,j]
+        end
+    end
+end
+
+function spectrallaplacian!(outspec, inspec, rearth; totws)
+    for (i, totw) in enumerate(totws)
+        outspec[i,:] .*= totw*(totw+1)/rearth^2 .* inspec[i,:]
+    end
+end
+
+function invspectrallaplacian!(inoutspec, rearth; totws)
+    for (i, totw) in enumerate(totws)
+        if totw == 0
+            inoutspec[i,:] .= 0
+            continue
+        end
+        inoutspec[i,:] .*= rearth^2/(totw*(totw+1))
+    end
+end
+
+function cos2dplm(latidx, l,lidx, m, midx, plmarr, epstable)
+    if l==m
+        -l*epstable[lidx+1,midx]*plmarr[lidx+1,midx, latidx]
+    else
+        (l+1)*epstable[lidx,midx]*plmarr[lidx-1,midx,latidx] -
+        l*epstable[lidx+1,midx]*plmarr[lidx+1,midx, latidx]
+    end
+end
+
+"An intermediate function in the calculation of 𝓖"
+function muldiff(r, s, cosθ, latidx, plmarr, epstable, l, m, lidx, midx)
+    1/(cosθ^2) * (im*r*plmarr[lidx,midx,latidx] - s*cos2dplm(latidx, l, lidx, m, midx, plmarr, epstable))
+end
+
+"The G operator, operating on fourier arrays R and S and returning spectral coefficients in outspec. Assumes a triangular truncation, 
 and that there is 1 extra total wavenumber compared to zonal wavenumber for meridional derivatives"
-function 𝓖!(out, A, B; zonw, totw)
-
-end
-
-function specvorfromuv!()
-
-end
-
-function specdivfromuv!()
-
+function 𝓖!(outspec, R, S; zonws, totws, rearth, weights, plmarr, epstable, cosvec, latidxs)
+    for (i, totw) in enumerate(totws), (j, zonw) in enumerate(0:min(maximum(zonws),totw))
+        curryfunc(r, s, cosθ, latidx) = muldiff(r, s, cosθ, latidx, plmarr, epstable, totw, zonw, i, j)
+        @views outspec[i,j] = 1/rearth * (weights ⋅ Itr.map(curryfunc, R[:,j], S[:, j], cosvec, latidxs))
+    end
 end
 
 end

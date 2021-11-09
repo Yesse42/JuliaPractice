@@ -44,7 +44,7 @@ function BaroDims(p::BaroParams{T}) where T
     specdims  = (mwnum+2, mwnum+1) # +1 for 0 wavenmuber, +2 for extra needed mode for meridional derivatives
     workdims = (gnum, gnum+1)
     sinlat, weights = (x->T.(x)).(gauss(gnum))
-    lat = T.(asin.(weights))
+    lat = T.(asin.(sinlat))
     lon = T.(range(0, 2π; length=griddims[2]+1))[1:end-1]
     zon = 0:mwnum
     tot = 0:mwnum+1
@@ -55,8 +55,7 @@ struct BaroPreCalc{T}
     PLM::Array{T,3} #An array filled with all the PLMs evaluated at every l, m and latitude in use
     ϵTable::Matrix{T} #Quick Meridional Derivatives
     cosθvec::Vector{T} #Useful for vor/div
-    FFTPlan::FFTW.rFFTWPlan{T, -1, false, 2, Int} #For that sweet efficiency
-    BFFTPlan::FFTW.rFFTWPlan{Complex{T}, 1, false, 2, Int}
+    BFFTPlan::FFTW.rFFTWPlan{Complex{T}, 1, false, 2, Int} #A backwards FFT plan
 end
 
 function BaroPreCalc(d::BaroDims{T}) where T
@@ -64,15 +63,14 @@ function BaroPreCalc(d::BaroDims{T}) where T
     for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:min(tot,maximum(d.zon))), (k, sinlat) in enumerate(d.sinlat)
         plms[i,j,k]=sf_legendre_sphPlm(tot, zon, sinlat) * sqrt(2π) #Normalization differences
     end
-    epsarr = zeros(T, d.spectraldims...)
+    epsarr = zeros(T, d.spectraldims[1]+1, d.spectraldims[2])
     for (i, tot) in enumerate(d.tot), (j, zon) in enumerate(0:min(tot,maximum(d.zon)))
         tot==0 && continue
-        epsarr[i,j]=((tot^2-zon^2)/4*tot^2-1)
+        epsarr[i,j]=((tot^2-zon^2)/(4*tot^2-1))
     end
     cosvec = cos.(d.lat)
-    fftplan = plan_rfft(d.lat.*(d.lon)', 2)
     bfftplan = plan_brfft(Complex{T}.((1:d.fourierworkspacedims[1]) .* (1:d.fourierworkspacedims[2])'), d.griddims[2], 2)
-    BaroPreCalc(plms, epsarr, cosvec, fftplan, bfftplan)
+    BaroPreCalc(plms, epsarr, cosvec, bfftplan)
 end
 
 mutable struct BaroModVals{T}
